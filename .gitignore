@@ -53,3 +53,6 @@ dkms.conf
 
 # debug information files
 *.dwo
+sb_int_tests
+sb_str_tests
+sb_mem_freelist_tests
