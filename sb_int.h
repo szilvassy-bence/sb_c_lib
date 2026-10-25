@@ -2,6 +2,7 @@
 #define SB_INT_H
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 /*
@@ -473,5 +474,8 @@ uint8_t sb_int_i16_to_u8(int16_t a, bool *truncated);
  *      truncated = false
  */
 uint8_t sb_int_i32_to_u8(int32_t a, bool *truncated);
+
+size_t sb_int_min_size_t(size_t a, size_t b);
+size_t sb_int_max_size_t(size_t a, size_t b);
 
 #endif

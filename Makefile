@@ -61,7 +61,7 @@ DEPS := $(SRCS:.c=.d)
 # törölne minden build végén (majd újrafordítana).
 .SECONDARY:
 
-TESTS := sb_int_tests sb_str_tests sb_mem_freelist_tests
+TESTS := sb_int_tests sb_str_tests sb_mem_freelist_tests sb_mem_arena_tests
 
 all: $(TESTS)
 
@@ -82,11 +82,16 @@ san-%: %.c
 	$(SAN_CC) $(SANFLAGS) -o $*_san $<
 	ASAN_OPTIONS=detect_stack_use_after_return=1 ./$*_san
 
-san-%_tests: %_tests.c %.
+san-%_tests: %_tests.c %.c
 	$(SAN_CC) $(SANFLAGS) -o $*_tests_san $^
+	./$*_tests_san
 
 opt-%: %.c
 	$(CC) -std=c17 $(WARN) -g -O2 -o $*_opt $<
+
+vg-%_tests: sb_int.c %_tests.c %.c
+	gcc -std=c17 $(WARN) -g -O0 -o $*_tests_vg $^
+	valgrind --leak-check=full --show-leak-kinds=all --error-exitcode=9 ./$*_tests_vg
 
 check: analyze all
 
