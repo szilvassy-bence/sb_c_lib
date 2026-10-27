@@ -4,7 +4,7 @@
 #   make sb_string         egy program
 #   make analyze           statikus analízis — futtatás nélkül
 #   make san-sb_string     clang + ASan/UBSan: fordít ÉS futtat
-#   make opt-sb_string     -O2 build (az optimalizáló más UB-t hoz elő)
+#   make vg-sb_string      valgrind memory analysis
 #   make check             analyze + minden build
 #   make clean
 #
@@ -20,88 +20,70 @@
 # Kiegészítik egymást: a statikus olyan ágat is lát, amit sosem futtatsz,
 # a futásidejű viszont gyakorlatilag nem ad téves riasztást.
 
-# A CC-nek a make-ben van beépített alapértéke (cc), ezért ?= nem hatna rá.
-# A := felülírja, a parancssori `make CC=gcc` viszont továbbra is nyer.
+DIR_BUILD      := build
+DIR_BUILD_TEST := $(DIR_BUILD)/test
+DIR_BUILD_SAN  := $(DIR_BUILD)/san
+DIR_BUILD_OBJS := $(DIR_BUILD)/obj
+DIR_SRCS       := src
+DIR_SRC_TEST   := test
+
 CC     := gcc-13
 SAN_CC ?= clang
 
 WARN     := -Wall -Wextra -Wpedantic
-CFLAGS   := -std=c17 $(WARN) -g -O0
+CFLAGS   := -std=c17 $(WARN) -g -O0 -Isrc
 
-# Header-dependency generálás. Külön változó, NEM a CFLAGS része, mert az
-# `analyze` target `-o /dev/null`-lal fordít, és a -MMD onnan a fájlnevet
-# származtatja: "fatal error: opening dependency file /dev/null.d".
-# -MP: minden headerhez üres szabályt is ír, így egy header törlése nem
-#      "No rule to make target" hibát ad, hanem újrafordítást.
 DEPFLAGS := -MMD -MP
 
-# -g nélkül az ASan riport csak címeket ad, függvénynév és sorszám nélkül.
 SANFLAGS := -std=c17 $(WARN) -g -O0 \
             -fsanitize=address,undefined \
-            -fsanitize-address-use-after-return=always
+            -fsanitize-address-use-after-return=always -Isrc
 
-SRCS := $(wildcard *.c)
-BINS := $(SRCS:.c=)
-DEPS := $(SRCS:.c=.d)
+SRCS      := $(wildcard $(DIR_SRCS)/*.c)
+TEST_SRCS := $(wildcard $(DIR_SRC_TEST)/*.c)
+OBJS  := $(patsubst $(DIR_SRCS)/%.c,$(DIR_BUILD_OBJS)/src/%.o,$(SRCS)) $(patsubst $(DIR_SRC_TEST)/%.c,$(DIR_BUILD_OBJS)/test/%.o,$(TEST_SRCS))
+DEPS := $(OBJS:.o=.d)
 
-# A `%.h` prerequisite szándékosan lekerült: a header-függést most a .d fájlok
-# adják, pontosabban (a tranzitív include-okat is), és így a header nélküli
-# .c sem esik át a make beépített szabályára.
-%.o: %.c
+TEST_TARGETS := $(patsubst $(DIR_SRC_TEST)/%.c,$(DIR_BUILD_TEST)/%,$(TEST_SRCS))
+
+$(DIR_BUILD_OBJS)/%.o: %.c
+	@mkdir -p $(@D)
 	$(CC) $(CFLAGS) $(DEPFLAGS) -c $< -o $@
 
-# Csak objektumok linkelése — a tesztfájl is előbb .o lesz a fenti szabállyal.
-# Ez azért kell, mert a .d-ből beolvasott header-prerequisite-ek bekerülnének
-# a $^-ba, és a `gcc ... sb_str.h -o sb_str_tests` a headert bemenetként
-# próbálná feldolgozni. Így a $^ garantáltan csak .o.
-%_tests: %_tests.o %.o
+$(DIR_BUILD_TEST)/%: $(DIR_BUILD_OBJS)/test/%.o $(DIR_BUILD_OBJS)/src/%.o
+	mkdir -p $(@D)
 	$(CC) $(CFLAGS) $^ -o $@
 
-# A .o-k pattern rule termékei, amiket a make egyébként köztes fájlként
-# törölne minden build végén (majd újrafordítana).
 .SECONDARY:
 
-TESTS := sb_int_tests sb_str_tests sb_mem_freelist_tests sb_mem_arena_tests
+all: $(TEST_TARGETS)
 
-all: $(TESTS)
+test: $(TEST_TARGETS)
+	@for t in $(TEST_TARGETS); do ./$$t || exit 1; done
 
-test: $(TESTS)
-	./sb_int_tests
-	./sb_str_tests
-	./sb_mem_freelist_tests
-
-# Statikus analízis. Nem állítja meg a többi fájl vizsgálatát az első hibánál.
 analyze:
 	@for f in $(SRCS); do \
 	    echo "== $$f =="; \
 	    $(CC) $(CFLAGS) -fanalyzer -c $$f -o /dev/null || true; \
 	done
 
-# A futásidejű ellenőrzés csak akkor szól, ha a hibás ág LEFUT.
-san-%: %.c
-	$(SAN_CC) $(SANFLAGS) -o $*_san $<
-	ASAN_OPTIONS=detect_stack_use_after_return=1 ./$*_san
+$(DIR_BUILD_TEST)/sb_str $(DIR_BUILD_TEST)/sb_mem_arena: $(DIR_BUILD_OBJS)/src/sb_int.o
 
-san-%_tests: %_tests.c %.c
-	$(SAN_CC) $(SANFLAGS) -o $*_tests_san $^
-	./$*_tests_san
+san-%: $(DIR_SRC_TEST)/%.c $(DIR_SRCS)/%.c
+	mkdir -p $(DIR_BUILD_SAN)
+	$(SAN_CC) $(SANFLAGS) $^ -o $(DIR_BUILD_SAN)/$*
+	./$(DIR_BUILD_SAN)/$*
 
-opt-%: %.c
-	$(CC) -std=c17 $(WARN) -g -O2 -o $*_opt $<
-
-vg-%_tests: sb_int.c %_tests.c %.c
-	gcc -std=c17 $(WARN) -g -O0 -o $*_tests_vg $^
-	valgrind --leak-check=full --show-leak-kinds=all --error-exitcode=9 ./$*_tests_vg
+vg-%: $(DIR_SRC_TEST)/%.c $(DIR_SRCS)/%.c $(DIR_SRCS)/sb_int.c
+	mkdir -p $(DIR_BUILD)/vg
+	gcc $(CFLAGS) $^ -o $(DIR_BUILD)/vg/$*
+	valgrind --leak-check=full --show-leak-kinds=all --error-exitcode=9 $(DIR_BUILD)/vg/$*
 
 check: analyze all
 
 clean:
-	rm -f $(BINS) *.o *.d *_san *_opt
+	rm -rf $(DIR_BUILD)
 
 .PHONY: all analyze check clean
 
-# A generált dependency-k beolvasása. A '-' azért kell, mert az első buildnél
-# (és clean után) még nincsenek .d fájlok — hiba helyett csendben kihagyja.
-# Ez tanítja meg a make-nek, hogy sb_str.c az sb_int.h-tól is függ, amit a
-# fenti `%.o: %.c %.h` szabály önmagában nem tud.
 -include $(DEPS)

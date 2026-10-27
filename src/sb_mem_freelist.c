@@ -259,10 +259,9 @@ void sb_memory_print_free_list(SbMemFreelist *fl) {
 #endif
 
 static const char *sb_check_heap(const SbMemFreelist *fl) {
-#ifdef DEBUG_MODE
     if (fl->freep == NULL)
         return NULL;
-    Header *p = &fl->base;
+    const Header *p = &fl->base;
     uint32_t steps = 0;
     bool reached_free = false;
     bool wrapped = false;
@@ -305,7 +304,6 @@ static const char *sb_check_heap(const SbMemFreelist *fl) {
         printf("Not wrapped\n");
         exit(1);
     }
-#endif
     return NULL;
 }
 

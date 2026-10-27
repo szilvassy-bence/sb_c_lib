@@ -33,7 +33,7 @@ void sb_memory_destroy(SbMemFreelist *fl);
 void sb_memory_print_free_list(SbMemFreelist *fl);
 void sb_memory_debug_from_client_ptr(void *ptr);
 #else
-#define sb_memory_print_free_list() ((void)0)
+#define sb_memory_print_free_list(fl) ((void)fl)
 #define sb_memory_debug_from_client_ptr(ptr) ((void)0)
 #endif
 
