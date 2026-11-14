@@ -237,9 +237,10 @@ static void get_previous_free_p(SbMemFreelist *fl, Header **p,
 #ifdef DEBUG_MODE
 void sb_memory_print_free_list(SbMemFreelist *fl) {
     uint32_t count = 0;
-    printf("\n-- PRINT FREE POINTERS --\nBase's address: %p\n",
-           (void *)&fl->base);
-    if (fl->freep == NULL || fl->freep == &fl->base) {
+    printf("\n-- PRINT FREE POINTERS --\n%18s: %p\n%18s: %p\n",
+           "Base's address", (void *)&fl->base, "Freep points to",
+           (void *)fl->freep);
+    if (fl->freep == NULL || fl->base.next == &fl->base) {
         printf("Free list is empty.\n");
     } else {
         Header *p = fl->freep;
